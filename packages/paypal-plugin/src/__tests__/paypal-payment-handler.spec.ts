@@ -3,13 +3,21 @@ import { ApiError, CheckoutPaymentIntent, PaypalExperienceUserAction } from '@pa
 // Mock the paypal-client module so no real SDK calls are made.
 const mockCaptureOrder = jest.fn();
 const mockCreateOrder = jest.fn();
+const mockAuthorizeOrder = jest.fn();
 const mockOrdersController = {
     createOrder: mockCreateOrder,
     captureOrder: mockCaptureOrder,
+    authorizeOrder: mockAuthorizeOrder,
+};
+
+const mockCaptureAuthorizedPayment = jest.fn();
+const mockPaymentsController = {
+    captureAuthorizedPayment: mockCaptureAuthorizedPayment,
 };
 
 jest.mock('../paypal-client', () => ({
     getOrdersController: jest.fn(() => mockOrdersController),
+    getPaymentsController: jest.fn(() => mockPaymentsController),
     _resetPaypalClientForTesting: jest.fn(),
 }));
 
@@ -92,7 +100,41 @@ function makeCaptureOrderResponse(captureId: string, captureStatus = 'COMPLETED'
     };
 }
 
-// ─── createPayment ────────────────────────────────────────────────────────────
+/** UC2: captureAuthorizedPayment returns a CapturedPayment directly (not wrapped in purchaseUnits). */
+function makeCaptureAuthorizedPaymentResponse(captureId: string, captureStatus = 'COMPLETED') {
+    return {
+        statusCode: 201,
+        result: {
+            id: captureId,
+            status: captureStatus,
+        },
+        headers: {},
+        body: '{}',
+    };
+}
+
+/** UC2: authorizeOrder response with authorizationId nested in purchaseUnits. */
+function makeAuthorizeOrderResponse(authorizationId: string, authorizationStatus = 'CREATED') {
+    return {
+        statusCode: 201,
+        result: {
+            id: 'PAYPAL-ORDER-001',
+            status: 'COMPLETED',
+            purchaseUnits: [{
+                payments: {
+                    authorizations: [{
+                        id: authorizationId,
+                        status: authorizationStatus,
+                    }],
+                },
+            }],
+        },
+        headers: {},
+        body: '{}',
+    };
+}
+
+// ─── createPayment (UC1 – CAPTURE intent) ────────────────────────────────────
 
 describe('paypalPaymentHandler.createPayment', () => {
     const createPaymentFn = (paypalPaymentHandler as any).createPayment;
@@ -298,9 +340,102 @@ describe('paypalPaymentHandler.createPayment', () => {
     });
 });
 
-// ─── settlePayment ────────────────────────────────────────────────────────────
+// ─── createPayment (UC2 – AUTHORIZE intent) ───────────────────────────────────
 
-describe('paypalPaymentHandler.settlePayment', () => {
+describe('paypalPaymentHandler.createPayment (AUTHORIZE intent)', () => {
+    const createPaymentFn = (paypalPaymentHandler as any).createPayment;
+
+    beforeEach(() => jest.clearAllMocks());
+
+    it('sends AUTHORIZE intent when metadata.intent === "authorize"', async () => {
+        mockCreateOrder.mockResolvedValueOnce(
+            makeCreateOrderResponse('ORDER-AUTH-001', 'https://paypal.com/approve'),
+        );
+
+        const result = await createPaymentFn(
+            makeCtx(), makeOrder(), 1999, {},
+            { intent: 'authorize', returnUrl: RETURN_URL, cancelUrl: CANCEL_URL },
+        );
+
+        expect(result.state).toBe('Authorized');
+        expect(mockCreateOrder).toHaveBeenCalledWith(
+            expect.objectContaining({
+                body: expect.objectContaining({
+                    intent: CheckoutPaymentIntent.Authorize,
+                }),
+            }),
+        );
+    });
+
+    it('returns approvalUrl in metadata when AUTHORIZE intent succeeds', async () => {
+        const paypalOrderId = 'ORDER-AUTH-002';
+        const approvalUrl = `https://www.sandbox.paypal.com/checkoutnow?token=${paypalOrderId}`;
+        mockCreateOrder.mockResolvedValueOnce(
+            makeCreateOrderResponse(paypalOrderId, approvalUrl),
+        );
+
+        const result = await createPaymentFn(
+            makeCtx(), makeOrder(), 5000, {},
+            { intent: 'authorize', returnUrl: RETURN_URL, cancelUrl: CANCEL_URL },
+        );
+
+        expect(result.state).toBe('Authorized');
+        expect(result.transactionId).toBe(paypalOrderId);
+        expect(result.metadata?.public?.approvalUrl).toBe(approvalUrl);
+    });
+
+    it('uses CAPTURE intent when metadata.intent is absent', async () => {
+        mockCreateOrder.mockResolvedValueOnce(
+            makeCreateOrderResponse('ORDER-CAP', 'https://paypal.com/approve'),
+        );
+
+        await createPaymentFn(
+            makeCtx(), makeOrder(), 1999, {},
+            { returnUrl: RETURN_URL, cancelUrl: CANCEL_URL }, // no intent field
+        );
+
+        expect(mockCreateOrder).toHaveBeenCalledWith(
+            expect.objectContaining({
+                body: expect.objectContaining({
+                    intent: CheckoutPaymentIntent.Capture,
+                }),
+            }),
+        );
+    });
+
+    it('uses CAPTURE intent when metadata.intent is an unrecognized value', async () => {
+        mockCreateOrder.mockResolvedValueOnce(
+            makeCreateOrderResponse('ORDER-CAP2', 'https://paypal.com/approve'),
+        );
+
+        await createPaymentFn(
+            makeCtx(), makeOrder(), 1999, {},
+            { intent: 'unknown-value', returnUrl: RETURN_URL, cancelUrl: CANCEL_URL },
+        );
+
+        expect(mockCreateOrder).toHaveBeenCalledWith(
+            expect.objectContaining({
+                body: expect.objectContaining({
+                    intent: CheckoutPaymentIntent.Capture,
+                }),
+            }),
+        );
+    });
+
+    it('returns Declined when returnUrl is missing even for AUTHORIZE intent', async () => {
+        const result = await createPaymentFn(
+            makeCtx(), makeOrder(), 1999, {},
+            { intent: 'authorize', cancelUrl: CANCEL_URL },
+        );
+
+        expect(result.state).toBe('Declined');
+        expect(mockCreateOrder).not.toHaveBeenCalled();
+    });
+});
+
+// ─── settlePayment (UC1 – direct captureOrder) ────────────────────────────────
+
+describe('paypalPaymentHandler.settlePayment (UC1 – direct capture)', () => {
     const settlePaymentFn = (paypalPaymentHandler as any).settlePayment;
 
     beforeEach(() => jest.clearAllMocks());
@@ -373,5 +508,108 @@ describe('paypalPaymentHandler.settlePayment', () => {
         );
 
         expect(result.success).toBe(false);
+    });
+});
+
+// ─── settlePayment (UC2 – captureAuthorizedPayment) ──────────────────────────
+
+describe('paypalPaymentHandler.settlePayment (UC2 – authorized capture)', () => {
+    const settlePaymentFn = (paypalPaymentHandler as any).settlePayment;
+
+    beforeEach(() => jest.clearAllMocks());
+
+    it('calls captureAuthorizedPayment when authorizationId is present in metadata', async () => {
+        const authorizationId = 'AUTH-001';
+        mockCaptureAuthorizedPayment.mockResolvedValueOnce(
+            makeCaptureAuthorizedPaymentResponse('CAP-AUTH-001'),
+        );
+
+        await settlePaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: { authorizationId } }),
+            {},
+        );
+
+        expect(mockCaptureAuthorizedPayment).toHaveBeenCalledWith(
+            expect.objectContaining({ authorizationId: 'AUTH-001' }),
+        );
+        expect(mockCaptureOrder).not.toHaveBeenCalled();
+    });
+
+    it('returns success with captureId and captureStatus from CapturedPayment', async () => {
+        const captureId = 'CAP-AUTH-XYZ';
+        mockCaptureAuthorizedPayment.mockResolvedValueOnce(
+            makeCaptureAuthorizedPaymentResponse(captureId, 'COMPLETED'),
+        );
+
+        const result = await settlePaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: { authorizationId: 'AUTH-001' } }),
+            {},
+        );
+
+        expect(result.success).toBe(true);
+        expect(result.metadata?.captureId).toBe(captureId);
+        expect(result.metadata?.captureStatus).toBe('COMPLETED');
+    });
+
+    it('sends finalCapture: true in the request body', async () => {
+        mockCaptureAuthorizedPayment.mockResolvedValueOnce(
+            makeCaptureAuthorizedPaymentResponse('CAP-001'),
+        );
+
+        await settlePaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: { authorizationId: 'AUTH-002' } }),
+            {},
+        );
+
+        expect(mockCaptureAuthorizedPayment).toHaveBeenCalledWith(
+            expect.objectContaining({ body: expect.objectContaining({ finalCapture: true }) }),
+        );
+    });
+
+    it('returns failure when captureAuthorizedPayment throws ApiError', async () => {
+        const apiError = Object.assign(new Error('Authorization expired'), {
+            statusCode: 422, headers: {}, body: 'AUTHORIZATION_ALREADY_CAPTURED',
+        });
+        Object.setPrototypeOf(apiError, ApiError.prototype);
+        mockCaptureAuthorizedPayment.mockRejectedValueOnce(apiError);
+
+        const result = await settlePaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: { authorizationId: 'AUTH-003' } }),
+            {},
+        );
+
+        expect(result.success).toBe(false);
+        expect(result.errorMessage).toBeDefined();
+    });
+
+    it('returns failure when captureAuthorizedPayment returns empty result', async () => {
+        mockCaptureAuthorizedPayment.mockResolvedValueOnce(
+            { statusCode: 201, result: null, headers: {}, body: '{}' },
+        );
+
+        const result = await settlePaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: { authorizationId: 'AUTH-004' } }),
+            {},
+        );
+
+        expect(result.success).toBe(false);
+    });
+
+    it('falls back to UC1 captureOrder when authorizationId is absent from metadata', async () => {
+        mockCaptureOrder.mockResolvedValueOnce(makeCaptureOrderResponse('CAP-FALLBACK'));
+
+        await settlePaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: {} }),   // no authorizationId
+            {},
+        );
+
+        expect(mockCaptureOrder).toHaveBeenCalled();
+        expect(mockCaptureAuthorizedPayment).not.toHaveBeenCalled();
     });
 });
