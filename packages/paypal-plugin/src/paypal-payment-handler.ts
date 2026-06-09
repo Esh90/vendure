@@ -5,6 +5,8 @@ import {
     PaypalExperienceUserAction,
 } from '@paypal/paypal-server-sdk';
 import {
+    CancelPaymentErrorResult,
+    CancelPaymentResult,
     CreatePaymentResult,
     LanguageCode,
     Logger,
@@ -276,6 +278,55 @@ export const paypalPaymentHandler = new PaymentMethodHandler({
             const errorMessage = extractErrorMessage(err);
             Logger.error(
                 `Failed to settle PayPal payment for Vendure order ${String(order.id)}: ${errorMessage}`,
+                loggerCtx,
+            );
+            return { success: false, errorMessage };
+        }
+    },
+
+    /**
+     * Called by Vendure's payment state machine when transitioning a payment from
+     * 'Authorized' → 'Cancelled'.
+     *
+     * UC3 path (authorizationId present in metadata):
+     *   Voids the reserved funds via voidPayment so the buyer is released from the hold.
+     *
+     * UC1 path (no authorizationId, direct-capture intent):
+     *   The PayPal order has no reservation to void — buyer approval expires naturally.
+     *   We return success immediately without calling PayPal.
+     */
+    cancelPayment: async (_ctx, order, payment, _args): Promise<CancelPaymentResult | CancelPaymentErrorResult> => {
+        const meta = payment.metadata as PaypalPaymentMetadata | null;
+        const authorizationId = meta?.authorizationId;
+
+        if (!authorizationId) {
+            Logger.info(
+                `No authorizationId on payment ${String(payment.id)} for Vendure order ` +
+                    `${String(order.id)} — no PayPal void required.`,
+                loggerCtx,
+            );
+            return { success: true };
+        }
+
+        try {
+            // voidPayment returns 204 No Content when prefer=minimal, so response.result
+            // will be null — success is determined solely by the absence of an exception.
+            await getPaymentsController().voidPayment({
+                authorizationId,
+                prefer: 'return=minimal',
+            });
+
+            Logger.info(
+                `Voided PayPal authorization ${authorizationId} for Vendure order ${String(order.id)}.`,
+                loggerCtx,
+            );
+
+            return { success: true };
+        } catch (err: unknown) {
+            const errorMessage = extractErrorMessage(err);
+            Logger.error(
+                `Failed to void PayPal authorization ${authorizationId} for Vendure order ` +
+                    `${String(order.id)}: ${errorMessage}`,
                 loggerCtx,
             );
             return { success: false, errorMessage };

@@ -34,4 +34,17 @@ export class PaypalShopResolver {
     ): Promise<boolean> {
         return this.paypalService.confirmPaypalAuthorization(ctx, args.paypalOrderId);
     }
+
+    /**
+     * UC3 – Cancel a pending PayPal payment before capture.
+     * Voids the PayPal authorization (if present) and transitions the Vendure payment to 'Cancelled'.
+     */
+    @Mutation()
+    @Allow(Permission.Authenticated)
+    async cancelPaypalOrder(
+        @Ctx() ctx: RequestContext,
+        @Args() args: { paypalOrderId: string },
+    ): Promise<boolean> {
+        return this.paypalService.cancelPaypalOrder(ctx, args.paypalOrderId);
+    }
 }

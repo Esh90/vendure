@@ -137,6 +137,58 @@ export class PaypalService {
         return true;
     }
 
+    /**
+     * UC3 – Cancels a pending PayPal payment from the storefront.
+     *
+     * Flow:
+     *  1. Look up the Vendure Payment by its PayPal order ID.
+     *  2. Verify the requesting user owns the payment.
+     *  3. Delegate to PaymentService.cancelPayment, which calls the handler's
+     *     `cancelPayment` method (→ PayPal voidPayment when authorizationId is present)
+     *     and transitions the Vendure payment state to 'Cancelled'.
+     *
+     * Use this when the buyer wants to cancel before the order is fulfilled.
+     * Admins can also cancel via the Admin API's cancelPayment mutation directly.
+     */
+    async cancelPaypalOrder(ctx: RequestContext, paypalOrderId: string): Promise<boolean> {
+        Logger.info(
+            `Cancelling PayPal order: ${paypalOrderId}`,
+            loggerCtx,
+        );
+
+        const payment = await this.findPaymentByOrderId(ctx, paypalOrderId);
+
+        this.assertOwnership(ctx, payment);
+
+        if (payment.state === 'Settled') {
+            throw new InternalServerError(
+                `Payment is already 'Settled' and cannot be cancelled. ` +
+                    `Use a refund to return funds to the buyer.`,
+            );
+        }
+
+        if (payment.state === 'Cancelled') {
+            throw new InternalServerError(`Payment is already 'Cancelled'.`);
+        }
+
+        const result = await this.paymentService.cancelPayment(ctx, payment.id);
+
+        if (result instanceof PaymentStateTransitionError) {
+            Logger.error(
+                `Failed to cancel payment ${String(payment.id)}: ${result.message}`,
+                loggerCtx,
+            );
+            throw new InternalServerError(result.message);
+        }
+
+        Logger.info(
+            `Payment ${String(payment.id)} cancelled successfully for PayPal order ${paypalOrderId}.`,
+            loggerCtx,
+        );
+
+        return true;
+    }
+
     private async findPaymentByOrderId(ctx: RequestContext, paypalOrderId: string): Promise<Payment & { order: Order }> {
         const payment = await this.connection
             .getRepository(ctx, Payment)

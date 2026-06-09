@@ -87,6 +87,16 @@ const loggerCtx = 'PaypalPlugin';
  * # 4. Capture reserved funds when merchant ships (via Admin API or service)
  * #    Vendure PaymentService.settlePayment(ctx, paymentId) → captureAuthorizedPayment
  * ```
+ *
+ * ## UC3 – Cancellation / Void (cancel before capture)
+ *
+ * ```graphql
+ * # Storefront: cancel a pending payment (voids authorization if UC2, no-op for UC1)
+ * mutation { cancelPaypalOrder(paypalOrderId: "<token>") }
+ *
+ * # Admin: cancel via Vendure Admin API (same handler invoked)
+ * mutation { cancelPayment(id: "<vendurePaymentId>") }
+ * ```
  */
 @VendurePlugin({
     imports: [PluginCommonModule],

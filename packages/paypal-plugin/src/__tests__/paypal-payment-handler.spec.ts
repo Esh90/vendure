@@ -11,8 +11,10 @@ const mockOrdersController = {
 };
 
 const mockCaptureAuthorizedPayment = jest.fn();
+const mockVoidPayment = jest.fn();
 const mockPaymentsController = {
     captureAuthorizedPayment: mockCaptureAuthorizedPayment,
+    voidPayment: mockVoidPayment,
 };
 
 jest.mock('../paypal-client', () => ({
@@ -611,5 +613,98 @@ describe('paypalPaymentHandler.settlePayment (UC2 – authorized capture)', () =
 
         expect(mockCaptureOrder).toHaveBeenCalled();
         expect(mockCaptureAuthorizedPayment).not.toHaveBeenCalled();
+    });
+});
+
+// ─── cancelPayment (UC3 – void authorization) ────────────────────────────────
+
+describe('paypalPaymentHandler.cancelPayment', () => {
+    const cancelPaymentFn = (paypalPaymentHandler as any).cancelPayment;
+
+    beforeEach(() => jest.clearAllMocks());
+
+    it('calls voidPayment with authorizationId when present in metadata', async () => {
+        // voidPayment returns 204 No Content → result is null; success = no exception thrown
+        mockVoidPayment.mockResolvedValueOnce({ statusCode: 204, result: null, headers: {}, body: '' });
+
+        const result = await cancelPaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: { authorizationId: 'AUTH-VOID-001' } }),
+            {},
+        );
+
+        expect(result.success).toBe(true);
+        expect(mockVoidPayment).toHaveBeenCalledWith(
+            expect.objectContaining({ authorizationId: 'AUTH-VOID-001', prefer: 'return=minimal' }),
+        );
+    });
+
+    it('returns success without calling voidPayment when no authorizationId in metadata', async () => {
+        const result = await cancelPaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: {} }),   // UC1 / pre-authorization — no authorizationId
+            {},
+        );
+
+        expect(result.success).toBe(true);
+        expect(mockVoidPayment).not.toHaveBeenCalled();
+    });
+
+    it('returns success without calling voidPayment when metadata is absent', async () => {
+        const result = await cancelPaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: null }),
+            {},
+        );
+
+        expect(result.success).toBe(true);
+        expect(mockVoidPayment).not.toHaveBeenCalled();
+    });
+
+    it('returns failure when voidPayment throws ApiError', async () => {
+        const apiError = Object.assign(new Error('Unprocessable'), {
+            statusCode: 422, headers: {}, body: 'AUTHORIZATION_ALREADY_CAPTURED',
+        });
+        Object.setPrototypeOf(apiError, ApiError.prototype);
+        mockVoidPayment.mockRejectedValueOnce(apiError);
+
+        const result = await cancelPaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: { authorizationId: 'AUTH-VOID-002' } }),
+            {},
+        );
+
+        expect(result.success).toBe(false);
+        expect(result.errorMessage).toMatch(/PayPal API error/i);
+    });
+
+    it('returns failure when voidPayment throws a generic error', async () => {
+        mockVoidPayment.mockRejectedValueOnce(new Error('Network timeout'));
+
+        const result = await cancelPaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: { authorizationId: 'AUTH-VOID-003' } }),
+            {},
+        );
+
+        expect(result.success).toBe(false);
+        expect(result.errorMessage).toBe('Network timeout');
+    });
+
+    it('treats a non-null 200 result (return=representation) as success', async () => {
+        mockVoidPayment.mockResolvedValueOnce({
+            statusCode: 200,
+            result: { id: 'AUTH-VOID-004', status: 'VOIDED' },
+            headers: {},
+            body: '{}',
+        });
+
+        const result = await cancelPaymentFn(
+            makeCtx(), makeOrder(),
+            makePayment({ metadata: { authorizationId: 'AUTH-VOID-004' } }),
+            {},
+        );
+
+        expect(result.success).toBe(true);
     });
 });
