@@ -141,7 +141,7 @@ function makeAuthorizeOrderResponse(authorizationId: string, authorizationStatus
 // ─── createPayment (UC1 – CAPTURE intent) ────────────────────────────────────
 
 describe('paypalPaymentHandler.createPayment', () => {
-    const createPaymentFn = (paypalPaymentHandler as any).createPayment;
+    const createPaymentFn = (paypalPaymentHandler as any)['createPaymentFn'];
 
     beforeEach(() => jest.clearAllMocks());
 
@@ -347,7 +347,7 @@ describe('paypalPaymentHandler.createPayment', () => {
 // ─── createPayment (UC2 – AUTHORIZE intent) ───────────────────────────────────
 
 describe('paypalPaymentHandler.createPayment (AUTHORIZE intent)', () => {
-    const createPaymentFn = (paypalPaymentHandler as any).createPayment;
+    const createPaymentFn = (paypalPaymentHandler as any)['createPaymentFn'];
 
     beforeEach(() => jest.clearAllMocks());
 
@@ -440,7 +440,7 @@ describe('paypalPaymentHandler.createPayment (AUTHORIZE intent)', () => {
 // ─── settlePayment (UC1 – direct captureOrder) ────────────────────────────────
 
 describe('paypalPaymentHandler.settlePayment (UC1 – direct capture)', () => {
-    const settlePaymentFn = (paypalPaymentHandler as any).settlePayment;
+    const settlePaymentFn = (paypalPaymentHandler as any)['settlePaymentFn'];
 
     beforeEach(() => jest.clearAllMocks());
 
@@ -518,7 +518,7 @@ describe('paypalPaymentHandler.settlePayment (UC1 – direct capture)', () => {
 // ─── settlePayment (UC2 – captureAuthorizedPayment) ──────────────────────────
 
 describe('paypalPaymentHandler.settlePayment (UC2 – authorized capture)', () => {
-    const settlePaymentFn = (paypalPaymentHandler as any).settlePayment;
+    const settlePaymentFn = (paypalPaymentHandler as any)['settlePaymentFn'];
 
     beforeEach(() => jest.clearAllMocks());
 
@@ -621,7 +621,7 @@ describe('paypalPaymentHandler.settlePayment (UC2 – authorized capture)', () =
 // ─── cancelPayment (UC3 – void authorization) ────────────────────────────────
 
 describe('paypalPaymentHandler.cancelPayment', () => {
-    const cancelPaymentFn = (paypalPaymentHandler as any).cancelPayment;
+    const cancelPaymentFn = (paypalPaymentHandler as any)['cancelPaymentFn'];
 
     beforeEach(() => jest.clearAllMocks());
 
@@ -727,7 +727,7 @@ function makeRefundResponse(refundId: string, refundStatus = 'COMPLETED') {
 }
 
 describe('paypalPaymentHandler.createRefund', () => {
-    const createRefundFn = (paypalPaymentHandler as any).createRefund;
+    const createRefundFn = (paypalPaymentHandler as any)['createRefundFn'];
 
     beforeEach(() => jest.clearAllMocks());
 

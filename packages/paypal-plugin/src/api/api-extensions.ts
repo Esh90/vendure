@@ -1,6 +1,19 @@
 import gql from 'graphql-tag';
 
 export const shopApiExtensions = gql`
+    """
+    UC6 – Contains the subscription ID and the PayPal-hosted approval URL returned
+    when a new subscription is created.
+
+    The buyer must visit \`approvalUrl\` to authorise the recurring charge.  After
+    approval PayPal redirects to the \`returnUrl\` you supplied, with the
+    \`subscription_id\` query parameter attached.
+    """
+    type PaypalSubscriptionInfo {
+        subscriptionId: String!
+        approvalUrl:    String!
+    }
+
     extend type Mutation {
         """
         UC1 – Confirms buyer approval of a PayPal CAPTURE-intent payment and captures the funds.
@@ -44,5 +57,37 @@ export const shopApiExtensions = gql`
         Returns \`true\` on success.  Throws if the payment is already 'Settled' or 'Cancelled'.
         """
         cancelPaypalOrder(paypalOrderId: String!): Boolean!
+
+        """
+        UC6 – Creates a new PayPal subscription for an existing billing plan.
+
+        The buyer must be redirected to the returned \`approvalUrl\` to authorise the recurring
+        charge on their PayPal account.  After approval PayPal redirects to \`returnUrl\` with a
+        \`subscription_id\` query parameter — store this ID to cancel the subscription later.
+
+        **Prerequisites:**
+        - A PayPal billing plan must already exist (created via the PayPal dashboard).
+        - The caller must be authenticated.
+        """
+        createPaypalSubscription(
+            planId:     String!
+            returnUrl:  String!
+            cancelUrl:  String!
+        ): PaypalSubscriptionInfo!
+
+        """
+        UC6 – Cancels an active PayPal subscription.
+
+        Pass the \`subscription_id\` that was returned (via PayPal's redirect) when the buyer
+        approved the subscription.  The optional \`reason\` string is shown to the buyer by PayPal.
+
+        Returns \`true\` on success.  Throws if the subscription ID is invalid or already cancelled.
+
+        **Required permission:** Authenticated.
+        """
+        cancelPaypalSubscription(
+            subscriptionId: String!
+            reason:         String
+        ): Boolean!
     }
 `;

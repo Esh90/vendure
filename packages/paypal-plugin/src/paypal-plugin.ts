@@ -13,6 +13,7 @@ import { OnApplicationBootstrap } from '@nestjs/common';
 import { shopApiExtensions } from './api/api-extensions';
 import { PaypalShopResolver } from './api/paypal-shop.resolver';
 import { paypalPaymentHandler } from './paypal-payment-handler';
+import { PaypalSubscriptionService } from './paypal-subscription.service';
 import { PaypalService } from './paypal.service';
 
 const loggerCtx = 'PaypalPlugin';
@@ -115,10 +116,37 @@ const loggerCtx = 'PaypalPlugin';
  *   }) { ... }
  * }
  * ```
+ *
+ * ## UC6 – Subscription Billing
+ *
+ * ```graphql
+ * # 1. Create a subscription (billing plan must already exist in your PayPal account)
+ * mutation {
+ *   createPaypalSubscription(
+ *     planId:    "P-XXXXXXXXXXXX"
+ *     returnUrl: "https://store.com/subscription/return"
+ *     cancelUrl: "https://store.com/subscription/cancel"
+ *   ) {
+ *     subscriptionId
+ *     approvalUrl
+ *   }
+ * }
+ *
+ * # 2. Redirect the buyer to `approvalUrl`.
+ * #    PayPal redirects back to returnUrl?subscription_id=<subscriptionId>
+ *
+ * # 3. Cancel the subscription at any time
+ * mutation {
+ *   cancelPaypalSubscription(
+ *     subscriptionId: "<subscriptionId>"
+ *     reason: "Customer request"
+ *   )
+ * }
+ * ```
  */
 @VendurePlugin({
     imports: [PluginCommonModule],
-    providers: [PaypalService],
+    providers: [PaypalService, PaypalSubscriptionService],
     shopApiExtensions: {
         schema: shopApiExtensions,
         resolvers: [PaypalShopResolver],

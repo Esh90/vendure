@@ -1,11 +1,15 @@
 import { Args, Mutation, Resolver } from '@nestjs/graphql';
 import { Allow, Ctx, Permission, RequestContext } from '@vendure/core';
 
+import { PaypalSubscriptionInfo, PaypalSubscriptionService } from '../paypal-subscription.service';
 import { PaypalService } from '../paypal.service';
 
 @Resolver()
 export class PaypalShopResolver {
-    constructor(private readonly paypalService: PaypalService) {}
+    constructor(
+        private readonly paypalService: PaypalService,
+        private readonly paypalSubscriptionService: PaypalSubscriptionService,
+    ) {}
 
     /**
      * UC1 – Capture funds immediately after buyer approval.
@@ -46,5 +50,40 @@ export class PaypalShopResolver {
         @Args() args: { paypalOrderId: string },
     ): Promise<boolean> {
         return this.paypalService.cancelPaypalOrder(ctx, args.paypalOrderId);
+    }
+
+    /**
+     * UC6 – Create a PayPal subscription for an existing billing plan.
+     * Returns the subscriptionId and the approvalUrl the buyer must visit.
+     */
+    @Mutation()
+    @Allow(Permission.Authenticated)
+    async createPaypalSubscription(
+        @Ctx() ctx: RequestContext,
+        @Args() args: { planId: string; returnUrl: string; cancelUrl: string },
+    ): Promise<PaypalSubscriptionInfo> {
+        return this.paypalSubscriptionService.createSubscription(
+            ctx,
+            args.planId,
+            args.returnUrl,
+            args.cancelUrl,
+        );
+    }
+
+    /**
+     * UC6 – Cancel an active PayPal subscription.
+     * Returns true on success; throws on failure.
+     */
+    @Mutation()
+    @Allow(Permission.Authenticated)
+    async cancelPaypalSubscription(
+        @Ctx() ctx: RequestContext,
+        @Args() args: { subscriptionId: string; reason?: string },
+    ): Promise<boolean> {
+        return this.paypalSubscriptionService.cancelSubscription(
+            ctx,
+            args.subscriptionId,
+            args.reason,
+        );
     }
 }

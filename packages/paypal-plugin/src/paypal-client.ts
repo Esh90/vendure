@@ -4,11 +4,13 @@ import {
     LogLevel,
     OrdersController,
     PaymentsController,
+    SubscriptionsController,
 } from '@paypal/paypal-server-sdk';
 
 let sharedClient: Client | null = null;
 let ordersController: OrdersController | null = null;
 let paymentsController: PaymentsController | null = null;
+let subscriptionsController: SubscriptionsController | null = null;
 
 function getClient(): Client {
     if (!sharedClient) {
@@ -65,9 +67,21 @@ export function getPaymentsController(): PaymentsController {
     return paymentsController;
 }
 
+/**
+ * Returns a singleton SubscriptionsController backed by the shared PayPal Client.
+ * Used for subscription billing (UC6): create/cancel subscriptions and billing plans.
+ */
+export function getSubscriptionsController(): SubscriptionsController {
+    if (!subscriptionsController) {
+        subscriptionsController = new SubscriptionsController(getClient());
+    }
+    return subscriptionsController;
+}
+
 /** Resets all singletons — for use in unit tests only. */
 export function _resetPaypalClientForTesting(): void {
     sharedClient = null;
     ordersController = null;
     paymentsController = null;
+    subscriptionsController = null;
 }
