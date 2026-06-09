@@ -7,6 +7,11 @@ import {
     PaypalReportingService,
 } from '../paypal-reporting.service';
 import { PaypalSubscriptionInfo, PaypalSubscriptionService } from '../paypal-subscription.service';
+import {
+    PaypalShipmentTrackingInput,
+    PaypalTrackingResult,
+    PaypalTrackingService,
+} from '../paypal-tracking.service';
 import { PaypalService } from '../paypal.service';
 
 @Resolver()
@@ -15,6 +20,7 @@ export class PaypalShopResolver {
         private readonly paypalService: PaypalService,
         private readonly paypalSubscriptionService: PaypalSubscriptionService,
         private readonly paypalReportingService: PaypalReportingService,
+        private readonly paypalTrackingService: PaypalTrackingService,
     ) {}
 
     /**
@@ -104,5 +110,35 @@ export class PaypalShopResolver {
         @Args() args: PaypalTransactionSearchInput,
     ): Promise<PaypalTransactionReport> {
         return this.paypalReportingService.searchTransactions(ctx, args);
+    }
+
+    /**
+     * UC8 – Add shipment tracking to a captured PayPal order.
+     * Returns the tracker ID and status ("SHIPPED").
+     */
+    @Mutation()
+    @Allow(Permission.Authenticated)
+    async addPaypalShipmentTracking(
+        @Ctx() ctx: RequestContext,
+        @Args() args: PaypalShipmentTrackingInput,
+    ): Promise<PaypalTrackingResult> {
+        return this.paypalTrackingService.addShipmentTracking(ctx, args);
+    }
+
+    /**
+     * UC8 – Cancel an existing shipment tracker on a PayPal order.
+     * Returns true on success.
+     */
+    @Mutation()
+    @Allow(Permission.Authenticated)
+    async cancelPaypalShipmentTracking(
+        @Ctx() ctx: RequestContext,
+        @Args() args: { paypalOrderId: string; trackerId: string },
+    ): Promise<boolean> {
+        return this.paypalTrackingService.cancelShipmentTracking(
+            ctx,
+            args.paypalOrderId,
+            args.trackerId,
+        );
     }
 }

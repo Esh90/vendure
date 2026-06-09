@@ -1,6 +1,19 @@
 import gql from 'graphql-tag';
 
 export const shopApiExtensions = gql`
+    # ─── UC8: Shipment Tracking types ────────────────────────────────────────────
+
+    """
+    UC8 – The PayPal tracker created when shipment tracking is added to an order.
+    Use \`trackerId\` to cancel the tracker later via \`cancelPaypalShipmentTracking\`.
+    """
+    type PaypalTrackingResult {
+        """The PayPal-generated tracker ID."""
+        trackerId: String!
+        """Shipment status — "SHIPPED" on creation, "CANCELLED" after cancellation."""
+        status:    String!
+    }
+
     # ─── UC7: Transaction Reporting types ────────────────────────────────────────
 
     """A monetary amount with currency code, as returned by PayPal."""
@@ -160,6 +173,49 @@ export const shopApiExtensions = gql`
         cancelPaypalSubscription(
             subscriptionId: String!
             reason:         String
+        ): Boolean!
+
+        """
+        UC8 – Adds shipment tracking information to a captured PayPal order.
+
+        Call this after the order has been physically shipped and a carrier tracking number
+        is available.  PayPal will optionally e-mail the buyer with tracking details when
+        \`notifyPayer\` is \`true\`.
+
+        **Required fields:**
+        - \`paypalOrderId\` — the PayPal order ID (stored as \`payment.transactionId\` in Vendure).
+        - \`captureId\`     — the PayPal capture ID (stored as \`payment.metadata.captureId\`).
+        - \`trackingNumber\` — carrier-issued tracking number.
+        - \`carrier\`       — PayPal carrier code (e.g. \`"UPS"\`, \`"FEDEX"\`, \`"DHL"\`, \`"OTHER"\`).
+
+        When \`carrier\` is \`"OTHER"\`, also supply \`carrierNameOther\`.
+
+        Returns a \`PaypalTrackingResult\` with the tracker ID and status ("SHIPPED").
+
+        **Required permission:** Authenticated.
+        """
+        addPaypalShipmentTracking(
+            paypalOrderId:    String!
+            captureId:        String!
+            trackingNumber:   String!
+            carrier:          String!
+            carrierNameOther: String
+            notifyPayer:      Boolean
+        ): PaypalTrackingResult!
+
+        """
+        UC8 – Cancels an existing shipment tracker on a PayPal order.
+
+        Pass the \`trackerId\` returned by \`addPaypalShipmentTracking\`.
+        Cancellation patches the tracker status to \`CANCELLED\` via the PayPal Orders API.
+
+        Returns \`true\` on success.  Throws if the tracker ID is invalid.
+
+        **Required permission:** Authenticated.
+        """
+        cancelPaypalShipmentTracking(
+            paypalOrderId: String!
+            trackerId:     String!
         ): Boolean!
     }
 `;

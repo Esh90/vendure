@@ -15,6 +15,7 @@ import { PaypalShopResolver } from './api/paypal-shop.resolver';
 import { paypalPaymentHandler } from './paypal-payment-handler';
 import { PaypalReportingService } from './paypal-reporting.service';
 import { PaypalSubscriptionService } from './paypal-subscription.service';
+import { PaypalTrackingService } from './paypal-tracking.service';
 import { PaypalService } from './paypal.service';
 
 const loggerCtx = 'PaypalPlugin';
@@ -175,10 +176,36 @@ const loggerCtx = 'PaypalPlugin';
  *   }
  * }
  * ```
+ *
+ * ## UC8 – Shipment Tracking
+ *
+ * ```graphql
+ * # 1. Add tracking after the order ships (use captureId from payment.metadata.captureId)
+ * mutation {
+ *   addPaypalShipmentTracking(
+ *     paypalOrderId:  "<payment.transactionId>"
+ *     captureId:      "<payment.metadata.captureId>"
+ *     trackingNumber: "1Z999AA10123456784"
+ *     carrier:        "UPS"
+ *     notifyPayer:    true
+ *   ) {
+ *     trackerId
+ *     status
+ *   }
+ * }
+ *
+ * # 2. Cancel the tracker if needed (e.g. shipment lost or re-routed)
+ * mutation {
+ *   cancelPaypalShipmentTracking(
+ *     paypalOrderId: "<payment.transactionId>"
+ *     trackerId:     "<trackerId from step 1>"
+ *   )
+ * }
+ * ```
  */
 @VendurePlugin({
     imports: [PluginCommonModule],
-    providers: [PaypalService, PaypalSubscriptionService, PaypalReportingService],
+    providers: [PaypalService, PaypalSubscriptionService, PaypalReportingService, PaypalTrackingService],
     shopApiExtensions: {
         schema: shopApiExtensions,
         resolvers: [PaypalShopResolver],
