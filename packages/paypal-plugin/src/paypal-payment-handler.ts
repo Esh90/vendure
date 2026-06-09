@@ -8,6 +8,7 @@ import {
     CancelPaymentErrorResult,
     CancelPaymentResult,
     CreatePaymentResult,
+    CreateRefundResult,
     LanguageCode,
     Logger,
     PaymentMethodHandler,
@@ -281,6 +282,84 @@ export const paypalPaymentHandler = new PaymentMethodHandler({
                 loggerCtx,
             );
             return { success: false, errorMessage };
+        }
+    },
+
+    /**
+     * Called by Vendure's refund state machine to issue a refund against a settled payment.
+     *
+     * UC4 – Full refund (`amount >= payment.amount`):
+     *   No `body` is sent to PayPal; PayPal refunds the entire captured amount.
+     *
+     * UC5 – Partial refund (`amount < payment.amount`):
+     *   Sends `body: { amount: { currencyCode, value } }` with the requested partial amount.
+     *
+     * Both paths require `payment.metadata.captureId` (written by `settlePayment`).
+     * Returns `state: 'Settled'` with the PayPal refundId on success, or `state: 'Failed'`.
+     */
+    createRefund: async (_ctx, _input, amount, order, payment, _args): Promise<CreateRefundResult> => {
+        const meta = payment.metadata as PaypalPaymentMetadata | null;
+        const captureId = meta?.captureId;
+
+        if (!captureId) {
+            return {
+                state: 'Failed',
+                metadata: {
+                    reason:
+                        'No captureId found in payment metadata. ' +
+                        'Only settled payments with a captureId can be refunded.',
+                },
+            };
+        }
+
+        const currencyCode = order.currencyCode ?? 'USD';
+        const isFullRefund = amount >= payment.amount;
+
+        try {
+            const response = await getPaymentsController().refundCapturedPayment({
+                captureId,
+                prefer: 'return=representation',
+                // Full refund: omit body so PayPal infers the full capture amount.
+                // Partial refund: include the amount to refund.
+                ...(isFullRefund
+                    ? {}
+                    : {
+                          body: {
+                              amount: {
+                                  currencyCode,
+                                  value: toPaypalAmountValue(amount, currencyCode),
+                              },
+                          },
+                      }),
+            });
+
+            if (!response.result) {
+                throw new Error('PayPal returned an empty response for refundCapturedPayment.');
+            }
+
+            const refund = response.result;
+            const refundId = refund.id ?? '';
+            const refundStatus = refund.status ? String(refund.status) : '';
+
+            Logger.info(
+                `Refunded PayPal capture ${captureId} for Vendure order ${String(order.id)}. ` +
+                    `Refund ID: ${refundId}, Status: ${refundStatus}, ` +
+                    `Type: ${isFullRefund ? 'FULL' : 'PARTIAL'}`,
+                loggerCtx,
+            );
+
+            return {
+                state: 'Settled',
+                transactionId: refundId,
+                metadata: { refundId, refundStatus },
+            };
+        } catch (err: unknown) {
+            const reason = extractErrorMessage(err);
+            Logger.error(
+                `Failed to refund PayPal capture ${captureId} for Vendure order ${String(order.id)}: ${reason}`,
+                loggerCtx,
+            );
+            return { state: 'Failed', metadata: { reason } };
         }
     },
 

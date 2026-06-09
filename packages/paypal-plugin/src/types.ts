@@ -16,4 +16,7 @@ export interface PaypalPaymentMetadata {
      */
     authorizationId?: string;
     authorizationStatus?: string;
+    /** UC4/UC5: Refund ID and status written by createRefund after a successful refund. */
+    refundId?: string;
+    refundStatus?: string;
 }

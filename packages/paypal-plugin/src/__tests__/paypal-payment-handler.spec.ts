@@ -12,9 +12,11 @@ const mockOrdersController = {
 
 const mockCaptureAuthorizedPayment = jest.fn();
 const mockVoidPayment = jest.fn();
+const mockRefundCapturedPayment = jest.fn();
 const mockPaymentsController = {
     captureAuthorizedPayment: mockCaptureAuthorizedPayment,
     voidPayment: mockVoidPayment,
+    refundCapturedPayment: mockRefundCapturedPayment,
 };
 
 jest.mock('../paypal-client', () => ({
@@ -706,5 +708,200 @@ describe('paypalPaymentHandler.cancelPayment', () => {
         );
 
         expect(result.success).toBe(true);
+    });
+});
+
+// ─── createRefund (UC4 – full refund / UC5 – partial refund) ─────────────────
+
+function makeRefundResponse(refundId: string, refundStatus = 'COMPLETED') {
+    return {
+        statusCode: 201,
+        result: {
+            id: refundId,
+            status: refundStatus,
+            amount: { currencyCode: 'USD', value: '19.99' },
+        },
+        headers: {},
+        body: '{}',
+    };
+}
+
+describe('paypalPaymentHandler.createRefund', () => {
+    const createRefundFn = (paypalPaymentHandler as any).createRefund;
+
+    beforeEach(() => jest.clearAllMocks());
+
+    // ─ UC4: full refund ──────────────────────────────────────────────────────
+
+    it('UC4: returns Settled with refundId and refundStatus on full refund success', async () => {
+        const refundId = 'REFUND-FULL-001';
+        mockRefundCapturedPayment.mockResolvedValueOnce(makeRefundResponse(refundId, 'COMPLETED'));
+
+        const result = await createRefundFn(
+            makeCtx(), {},
+            1999, // amount === payment.amount → full refund
+            makeOrder(),
+            makePayment({ amount: 1999, metadata: { captureId: 'CAP-001' } }),
+            {},
+        );
+
+        expect(result.state).toBe('Settled');
+        expect(result.transactionId).toBe(refundId);
+        expect(result.metadata?.refundId).toBe(refundId);
+        expect(result.metadata?.refundStatus).toBe('COMPLETED');
+    });
+
+    it('UC4: sends NO body for a full refund (amount >= payment.amount)', async () => {
+        mockRefundCapturedPayment.mockResolvedValueOnce(makeRefundResponse('REFUND-001'));
+
+        await createRefundFn(
+            makeCtx(), {},
+            1999,
+            makeOrder(),
+            makePayment({ amount: 1999, metadata: { captureId: 'CAP-001' } }),
+            {},
+        );
+
+        expect(mockRefundCapturedPayment).toHaveBeenCalledWith(
+            expect.not.objectContaining({ body: expect.anything() }),
+        );
+    });
+
+    it('UC4: calls refundCapturedPayment with the correct captureId', async () => {
+        mockRefundCapturedPayment.mockResolvedValueOnce(makeRefundResponse('REFUND-002'));
+
+        await createRefundFn(
+            makeCtx(), {},
+            1999,
+            makeOrder(),
+            makePayment({ amount: 1999, metadata: { captureId: 'CAP-FULL-XYZ' } }),
+            {},
+        );
+
+        expect(mockRefundCapturedPayment).toHaveBeenCalledWith(
+            expect.objectContaining({ captureId: 'CAP-FULL-XYZ' }),
+        );
+    });
+
+    // ─ UC5: partial refund ───────────────────────────────────────────────────
+
+    it('UC5: sends body with amount for a partial refund (amount < payment.amount)', async () => {
+        mockRefundCapturedPayment.mockResolvedValueOnce(makeRefundResponse('REFUND-PARTIAL-001'));
+
+        await createRefundFn(
+            makeCtx(), {},
+            500,  // partial — payment.amount is 1999
+            makeOrder(),
+            makePayment({ amount: 1999, metadata: { captureId: 'CAP-002' } }),
+            {},
+        );
+
+        expect(mockRefundCapturedPayment).toHaveBeenCalledWith(
+            expect.objectContaining({
+                body: expect.objectContaining({
+                    amount: { currencyCode: 'USD', value: '5.00' },
+                }),
+            }),
+        );
+    });
+
+    it('UC5: converts zero-decimal currency (JPY) correctly in partial refund body', async () => {
+        mockRefundCapturedPayment.mockResolvedValueOnce(makeRefundResponse('REFUND-JPY'));
+
+        await createRefundFn(
+            makeCtx(), {},
+            500,
+            makeOrder({ currencyCode: 'JPY' }),
+            makePayment({ amount: 1500, metadata: { captureId: 'CAP-JPY' } }),
+            {},
+        );
+
+        expect(mockRefundCapturedPayment).toHaveBeenCalledWith(
+            expect.objectContaining({
+                body: expect.objectContaining({
+                    amount: { currencyCode: 'JPY', value: '500' },
+                }),
+            }),
+        );
+    });
+
+    it('UC5: returns Settled with refundId on partial refund success', async () => {
+        const refundId = 'REFUND-PARTIAL-002';
+        mockRefundCapturedPayment.mockResolvedValueOnce(makeRefundResponse(refundId, 'COMPLETED'));
+
+        const result = await createRefundFn(
+            makeCtx(), {},
+            500,
+            makeOrder(),
+            makePayment({ amount: 1999, metadata: { captureId: 'CAP-003' } }),
+            {},
+        );
+
+        expect(result.state).toBe('Settled');
+        expect(result.transactionId).toBe(refundId);
+    });
+
+    // ─ Error paths ───────────────────────────────────────────────────────────
+
+    it('returns Failed when captureId is missing from payment metadata', async () => {
+        const result = await createRefundFn(
+            makeCtx(), {},
+            1999,
+            makeOrder(),
+            makePayment({ amount: 1999, metadata: {} }),  // no captureId
+            {},
+        );
+
+        expect(result.state).toBe('Failed');
+        expect(result.metadata?.reason).toMatch(/captureId/i);
+        expect(mockRefundCapturedPayment).not.toHaveBeenCalled();
+    });
+
+    it('returns Failed when metadata is null', async () => {
+        const result = await createRefundFn(
+            makeCtx(), {},
+            1999,
+            makeOrder(),
+            makePayment({ amount: 1999, metadata: null }),
+            {},
+        );
+
+        expect(result.state).toBe('Failed');
+        expect(mockRefundCapturedPayment).not.toHaveBeenCalled();
+    });
+
+    it('returns Failed when refundCapturedPayment throws ApiError', async () => {
+        const apiError = Object.assign(new Error('Unprocessable'), {
+            statusCode: 422, headers: {}, body: 'CAPTURE_FULLY_REFUNDED',
+        });
+        Object.setPrototypeOf(apiError, ApiError.prototype);
+        mockRefundCapturedPayment.mockRejectedValueOnce(apiError);
+
+        const result = await createRefundFn(
+            makeCtx(), {},
+            1999,
+            makeOrder(),
+            makePayment({ amount: 1999, metadata: { captureId: 'CAP-ERR' } }),
+            {},
+        );
+
+        expect(result.state).toBe('Failed');
+        expect(result.metadata?.reason).toMatch(/PayPal API error/i);
+    });
+
+    it('returns Failed when refundCapturedPayment returns empty result', async () => {
+        mockRefundCapturedPayment.mockResolvedValueOnce(
+            { statusCode: 200, result: null, headers: {}, body: '{}' },
+        );
+
+        const result = await createRefundFn(
+            makeCtx(), {},
+            1999,
+            makeOrder(),
+            makePayment({ amount: 1999, metadata: { captureId: 'CAP-EMPTY' } }),
+            {},
+        );
+
+        expect(result.state).toBe('Failed');
     });
 });

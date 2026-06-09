@@ -97,6 +97,24 @@ const loggerCtx = 'PaypalPlugin';
  * # Admin: cancel via Vendure Admin API (same handler invoked)
  * mutation { cancelPayment(id: "<vendurePaymentId>") }
  * ```
+ *
+ * ## UC4 – Full Refund / UC5 – Partial Refund (Admin-initiated via refundOrder)
+ *
+ * ```graphql
+ * # Admin: issue a full or partial refund via the Vendure Admin API
+ * # Vendure calls createRefund handler → PayPal refundCapturedPayment
+ * # Full refund: amount === payment.amount (no body sent to PayPal)
+ * # Partial refund: amount < payment.amount (body with amount sent to PayPal)
+ * mutation {
+ *   refundOrder(input: {
+ *     lines: [...],
+ *     reason: "Customer request",
+ *     paymentId: "<vendurePaymentId>",
+ *     adjustment: 0,
+ *     shipping: 0
+ *   }) { ... }
+ * }
+ * ```
  */
 @VendurePlugin({
     imports: [PluginCommonModule],
