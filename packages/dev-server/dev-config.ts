@@ -27,6 +27,7 @@ import { DataSourceOptions } from 'typeorm';
 import { NavModifierPlugin } from './test-plugins/nav-modifier-plugin/nav-modifier-plugin';
 // import { FieldTestPlugin } from './test-plugins/field-test/field-test-plugin';
 import { ReviewsPlugin } from './test-plugins/reviews/reviews-plugin';
+import { PaypalPlugin, paypalPaymentHandler } from '../paypal-plugin/src/index';
 
 const IS_INSTRUMENTED = process.env.IS_INSTRUMENTED === 'true';
 
@@ -96,7 +97,7 @@ export const devConfig: VendureConfig = {
         ...getDbConfig(),
     },
     paymentOptions: {
-        paymentMethodHandlers: [dummyPaymentHandler],
+        paymentMethodHandlers: [dummyPaymentHandler, paypalPaymentHandler],
     },
     settingsStoreFields: {
         MyPlugin: [
@@ -120,6 +121,7 @@ export const devConfig: VendureConfig = {
         //     platformFeeSKU: 'FEE',
         // }),
         ReadonlySettingsTestPlugin,
+        PaypalPlugin,
         ReviewsPlugin,
         // FieldTestPlugin,
         NavModifierPlugin,

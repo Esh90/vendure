@@ -1,0 +1,47 @@
+{
+    "name": "@vendure/paypal-plugin",
+    "version": "0.1.0",
+    "description": "PayPal payment plugin for Vendure",
+    "private": true,
+    "type": "commonjs",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "rimraf dist && tsc -p ./tsconfig.build.json",
+        "watch": "tsc -p ./tsconfig.build.json --watch",
+        "test": "jest --passWithNoTests"
+    },
+    "files": [
+        "dist/**/*"
+    ],
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "dependencies": {
+        "@paypal/paypal-server-sdk": "2.0.0",
+        "graphql-tag": "^2.12.6"
+    },
+    "peerDependencies": {
+        "@vendure/core": "*"
+    },
+    "devDependencies": {
+        "@types/jest": "^29.5.0",
+        "@vendure/core": "3.6.4",
+        "jest": "^29.7.0",
+        "ts-jest": "^29.2.0",
+        "typescript": "5.8.2"
+    },
+    "jest": {
+        "preset": "ts-jest",
+        "testEnvironment": "node",
+        "testMatch": [
+            "**/__tests__/**/*.spec.ts"
+        ],
+        "moduleNameMapper": {
+            "^(\\.{1,2}/.*)\\.js$": "$1"
+        }
+    }
+}

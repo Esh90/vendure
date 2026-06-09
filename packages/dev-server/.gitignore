@@ -13,3 +13,4 @@ scripts/dev-test
 custom-admin-ui
 docker-compose.*.yml
 graphql/graphql-env.d.ts
+.env
