@@ -1,6 +1,11 @@
-import { Args, Mutation, Resolver } from '@nestjs/graphql';
+import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { Allow, Ctx, Permission, RequestContext } from '@vendure/core';
 
+import {
+    PaypalTransactionReport,
+    PaypalTransactionSearchInput,
+    PaypalReportingService,
+} from '../paypal-reporting.service';
 import { PaypalSubscriptionInfo, PaypalSubscriptionService } from '../paypal-subscription.service';
 import { PaypalService } from '../paypal.service';
 
@@ -9,6 +14,7 @@ export class PaypalShopResolver {
     constructor(
         private readonly paypalService: PaypalService,
         private readonly paypalSubscriptionService: PaypalSubscriptionService,
+        private readonly paypalReportingService: PaypalReportingService,
     ) {}
 
     /**
@@ -85,5 +91,18 @@ export class PaypalShopResolver {
             args.subscriptionId,
             args.reason,
         );
+    }
+
+    /**
+     * UC7 – Search PayPal transactions for a date range.
+     * Returns paginated transaction data directly from PayPal's Transaction Search API.
+     */
+    @Query()
+    @Allow(Permission.Authenticated)
+    async paypalTransactionReport(
+        @Ctx() ctx: RequestContext,
+        @Args() args: PaypalTransactionSearchInput,
+    ): Promise<PaypalTransactionReport> {
+        return this.paypalReportingService.searchTransactions(ctx, args);
     }
 }

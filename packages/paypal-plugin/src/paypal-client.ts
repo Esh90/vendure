@@ -5,12 +5,14 @@ import {
     OrdersController,
     PaymentsController,
     SubscriptionsController,
+    TransactionSearchController,
 } from '@paypal/paypal-server-sdk';
 
 let sharedClient: Client | null = null;
 let ordersController: OrdersController | null = null;
 let paymentsController: PaymentsController | null = null;
 let subscriptionsController: SubscriptionsController | null = null;
+let transactionSearchController: TransactionSearchController | null = null;
 
 function getClient(): Client {
     if (!sharedClient) {
@@ -78,10 +80,22 @@ export function getSubscriptionsController(): SubscriptionsController {
     return subscriptionsController;
 }
 
+/**
+ * Returns a singleton TransactionSearchController backed by the shared PayPal Client.
+ * Used for transaction reporting (UC7): search and list PayPal transactions.
+ */
+export function getTransactionSearchController(): TransactionSearchController {
+    if (!transactionSearchController) {
+        transactionSearchController = new TransactionSearchController(getClient());
+    }
+    return transactionSearchController;
+}
+
 /** Resets all singletons — for use in unit tests only. */
 export function _resetPaypalClientForTesting(): void {
     sharedClient = null;
     ordersController = null;
     paymentsController = null;
     subscriptionsController = null;
+    transactionSearchController = null;
 }

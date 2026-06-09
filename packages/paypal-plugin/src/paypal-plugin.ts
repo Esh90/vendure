@@ -13,6 +13,7 @@ import { OnApplicationBootstrap } from '@nestjs/common';
 import { shopApiExtensions } from './api/api-extensions';
 import { PaypalShopResolver } from './api/paypal-shop.resolver';
 import { paypalPaymentHandler } from './paypal-payment-handler';
+import { PaypalReportingService } from './paypal-reporting.service';
 import { PaypalSubscriptionService } from './paypal-subscription.service';
 import { PaypalService } from './paypal.service';
 
@@ -143,10 +144,41 @@ const loggerCtx = 'PaypalPlugin';
  *   )
  * }
  * ```
+ *
+ * ## UC7 – Transaction Reporting
+ *
+ * ```graphql
+ * # Search transactions for a date range (max 31 days per call).
+ * # Paginate using `page` and `pageSize`.  Check `totalPages` in the response.
+ * query {
+ *   paypalTransactionReport(
+ *     startDate: "2024-01-01T00:00:00Z"
+ *     endDate:   "2024-01-31T23:59:59Z"
+ *     transactionStatus: "S"
+ *     page:     1
+ *     pageSize: 100
+ *   ) {
+ *     transactions {
+ *       transactionInfo {
+ *         transactionId
+ *         transactionStatus
+ *         transactionAmount { currencyCode value }
+ *         feeAmount         { currencyCode value }
+ *         invoiceId
+ *         transactionInitiationDate
+ *       }
+ *       payerInfo { emailAddress payerName }
+ *     }
+ *     totalItems
+ *     totalPages
+ *     page
+ *   }
+ * }
+ * ```
  */
 @VendurePlugin({
     imports: [PluginCommonModule],
-    providers: [PaypalService, PaypalSubscriptionService],
+    providers: [PaypalService, PaypalSubscriptionService, PaypalReportingService],
     shopApiExtensions: {
         schema: shopApiExtensions,
         resolvers: [PaypalShopResolver],
